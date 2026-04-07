@@ -1,9 +1,9 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEditor;
 using System.Linq;
 using System.IO;
 using System.Xml;
-using UnityEditor.Experimental.U2D;
+using UnityEditor.U2D.Sprites;
 using System.Text;
 
 public static class EditorTools
@@ -81,7 +81,10 @@ public static class EditorTools
 
         int width = 0, height = 0;
         var assetPath = AssetDatabase.GetAssetPath(texture2D);
-        var ai = AssetImporter.GetAtPath(assetPath) as ISpriteEditorDataProvider;
+        var importer = AssetImporter.GetAtPath(assetPath);
+        var factory = new SpriteDataProviderFactories();
+        factory.Init();
+        var ai = factory.GetSpriteEditorDataProviderFromObject(importer);
         ai.InitSpriteEditorDataProvider();
         var textureProvider = ai.GetDataProvider<ITextureDataProvider>();
         textureProvider.GetTextureActualWidthAndHeight(out width, out height);
@@ -159,7 +162,13 @@ public static class EditorTools
         var assetPath = path.Substring(path.IndexOf("Assets"));
         assetPath = assetPath.Substring(0, assetPath.Length - ".yaml".Length) + ".png";
         Debug.Log("AssetPath=" + assetPath);
-        var ai = AssetImporter.GetAtPath(assetPath) as ISpriteEditorDataProvider;
+
+        var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+        if (importer == null) return false;
+
+        var factory = new SpriteDataProviderFactories();
+        factory.Init();
+        var ai = factory.GetSpriteEditorDataProviderFromObject(importer);
         if (ai == null) return false;
 
         ai.InitSpriteEditorDataProvider();
@@ -174,12 +183,8 @@ public static class EditorTools
         ai.SetSpriteRects(spritesheet);
         ai.Apply();
 
-        var importer = ai as TextureImporter;
-        if (importer)
-        {
-            importer.spriteImportMode = SpriteImportMode.Multiple;
-            importer.SaveAndReimport();
-        }
+        importer.spriteImportMode = SpriteImportMode.Multiple;
+        importer.SaveAndReimport();
 
         return true;
     }
