@@ -21,13 +21,13 @@ public class LaunchStage : Stage
 
     private static List<string> GetExternalFilesDir()
     {
+        var externDirs = new List<string>();
 #if !UNITY_EDITOR && UNITY_ANDROID
         using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
         using (var context = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
         {
             // Get all available external file directories (emulated and sdCards)
             var externalFilesDirectories = context.Call<AndroidJavaObject[]>("getExternalFilesDirs", null);
-            var externDirs = new List<string>();
             for (var i = 0; i < externalFilesDirectories.Length; i++)
             {
                 var directory = externalFilesDirectories[i];
@@ -36,11 +36,57 @@ public class LaunchStage : Stage
                 if (Directory.Exists(dtxFilesPath))
                     externDirs.Add(dtxFilesPath);
             }
-            return externDirs;
+
+            // Android 11+ (API 30+) MANAGE_EXTERNAL_STORAGE permission check
+            using (var buildVersion = new AndroidJavaClass("android.os.Build$VERSION"))
+            {
+                int sdkInt = buildVersion.GetStatic<int>("SDK_INT");
+                if (sdkInt >= 30) // Android 11+
+                {
+                    using (var environment = new AndroidJavaClass("android.os.Environment"))
+                    {
+                        bool isExternalStorageManager = environment.CallStatic<bool>("isExternalStorageManager");
+                        if (!isExternalStorageManager)
+                        {
+                            // Open settings to request permission
+                            using (var intent = new AndroidJavaObject("android.content.Intent", "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"))
+                            {
+                                string packageName = context.Call<string>("getPackageName");
+                                using (var uriClass = new AndroidJavaClass("android.net.Uri"))
+                                using (var uri = uriClass.CallStatic<AndroidJavaObject>("parse", "package:" + packageName))
+                                {
+                                    intent.Call<AndroidJavaObject>("setData", uri);
+                                }
+                                intent.Call<AndroidJavaObject>("addFlags", 268435456); // FLAG_ACTIVITY_NEW_TASK
+                                context.Call("startActivity", intent);
+                            }
+                            // Skip loading from public folder this time
+                            return externDirs;
+                        }
+                    }
+                }
+            }
+
+            // If we have permission or it's < Android 11, check/create public folder
+            string publicDtxFolder = "/storage/emulated/0/DTXFiles";
+            if (!Directory.Exists(publicDtxFolder))
+            {
+                try
+                {
+                    Directory.CreateDirectory(publicDtxFolder);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError("Failed to create public DTXFiles directory: " + e.Message);
+                }
+            }
+            if (Directory.Exists(publicDtxFolder))
+            {
+                externDirs.Add(publicDtxFolder);
+            }
         }
-#else
-        return null;
 #endif
+        return externDirs;
     }
 
     /// <summary>
